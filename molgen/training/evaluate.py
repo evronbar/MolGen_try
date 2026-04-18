@@ -86,7 +86,7 @@ def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1
             sample=True,
             actions=None,
             rtgs=torch.tensor(rtgs, dtype=torch.float32).to(args.device).unsqueeze(0),
-            goal=torch.tensor(goal, dtype=torch.int64).to(args.device).unsqueeze(0) if goal_idx is not None else None,
+            goal_idx=torch.tensor(goal, dtype=torch.int64).to(args.device).unsqueeze(0) if goal_idx is not None else None,
             # timesteps=torch.zeros((1, 1, 1), dtype=torch.int64).to(self.device)
         )
 
@@ -132,7 +132,7 @@ def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1
                 rtgs=torch.tensor(rtgs, dtype=torch.float32).to(args.device).unsqueeze(0),
                 attention=torch.tensor(np.tril(np.ones(all_states.shape[1:])), dtype=torch.long).to(
                     args.device).unsqueeze(0),
-                goal=torch.tensor(goal, dtype=torch.int64).to(args.device).unsqueeze(0) if goal_idx is not None else None,
+                goal_idx=torch.tensor(goal, dtype=torch.int64).to(args.device).unsqueeze(0) if goal_idx is not None else None,
                 # timesteps=(min(j, self.config.max_timestep) * torch.ones((1, 1, 1), dtype=torch.int64).to(self.device)))
             )
 

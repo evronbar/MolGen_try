@@ -1,4 +1,5 @@
 import copy
+import random
 from typing import Literal, Union
 
 import torch
@@ -99,6 +100,7 @@ class PreTrainDecisionGPTSmilesDataset(PreTrainGPTSmilesDataset):
 
             results.append({
                 "rtgs": rtgs.copy(),                    # trajectory rtg - (block, 1)
+                # "goal": rtgs.copy(),  # <--- תוסיפי את השורה הזו
                 "input_ids": states.copy(),             # states - (block, state_len)
                 "labels": base_item["labels"].copy(),   # actions - (block, 1)
                 "attention_mask": [1] * trajectory_len,
@@ -124,4 +126,27 @@ class PreTrainDecisionGPTSmilesDataset(PreTrainGPTSmilesDataset):
         Returns:
             A dictionary containing the trajectory data for the corresponding goal and molecule.
         """
-        return self._trajectories[idx]
+        # return self._trajectories[idx]
+        # כביכול זה טוב
+        # 1. Fetch the precomputed data for this molecule
+        # We use deepcopy because we are about to modify the lists (rtgs, goal_idx)
+        # and we don't want to change the permanent memory in self._trajectories.
+        traj = copy.deepcopy(self._trajectories[idx])
+        
+        # 2. Decide: Single-goal (50% chance) or Multi-goal (50% chance)
+        # We only do this if there's more than one goal to begin with.
+        if self.n_goals > 1 and random.random() < 0.5:
+            # Pick one goal index at random (e.g., 0 for QED or 1 for PlogP)
+            selected_idx = random.randint(0, self.n_goals - 1)
+            
+            # Update 'rtgs' to contain only the chosen goal's values
+            traj['rtgs'] = [traj['rtgs'][selected_idx]]
+            
+            # Update 'goal_idx' so the model knows WHICH goal this is
+            traj['goal_idx'] = [selected_idx]
+        else:
+            # Keep all goals (Multi-objective mode)
+            # Ensure goal_idx reflects all indices [0, 1, 2...]
+            traj['goal_idx'] = list(range(self.n_goals))
+            
+        return traj

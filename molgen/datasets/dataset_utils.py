@@ -126,11 +126,8 @@ class PadCollate:
                 batch_rtgs.append(rtgs)
 
             if goal is not None:
-                if isinstance(goal, list):
-                    for i, g in enumerate(goal):
-                        goal[i] = [g] * max_length
-                else:
-                    goal = [goal] * max_length
+                if not isinstance(goal, list):
+                    goal = [goal]
                 batch_goals.append(goal)
 
             batch_input_ids.append(input_ids)
@@ -149,7 +146,7 @@ class PadCollate:
             return_dict["rtgs"] = torch.tensor(np.array(batch_rtgs), dtype=torch.float32)
             return_dict["targets"] = return_dict["labels"]
         if len(batch_goals) > 0:
-            return_dict["goal"] = torch.tensor(np.array(batch_goals), dtype=torch.int64)
+            return_dict["goal_idx"] = torch.tensor(np.array(batch_goals), dtype=torch.int64)
 
         return return_dict
 

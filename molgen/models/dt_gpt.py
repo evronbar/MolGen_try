@@ -268,65 +268,80 @@ class DtGPT(nn.Module):
         return torch.sum(model_output * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
     # state, action, and return
-    def forward(self, input_ids, labels, targets=None, rtgs=None, attention_mask=None, goal=None):
+    def forward(self, input_ids, labels, targets=None, rtgs=None, attention_mask=None, goal_idx=None):
         # input_ids: (batch, block_size, state_size)
         # labels: (batch, block_size, 1)
         # targets: (batch, block_size, 1)
-        # rtgs: (batch, n_goals, block_size)
-        # goals: optional - (batch, n_goals, block_size)
+        # rtgs: (batch, n_goals, block_size) rewards to go for each goal at each timestep
+        # goals: optional - (batch, n_goals, block_size) what type of goal we are conditioning on at each timestep (if we have multiple goals)
 
         batch_size = input_ids.shape[0]
         block_size = input_ids.shape[1]
         state_size = input_ids.shape[2]
-        n_goals = rtgs.shape[1]
-        n_layers = n_goals + 2
+        if goal_idx is not None:
+            # Accept goal_idx in shapes (B), (B, G), or (B, G, T) and normalize to (B, G).
+            if goal_idx.dim() == 1:
+                goal_idx = goal_idx.unsqueeze(1)
+            elif goal_idx.dim() == 3:
+                goal_idx = goal_idx[:, :, 0]
+
+        current_n_goals = rtgs.shape[1]
+        # n_layers = n_goals + 2
+        n_layers = current_n_goals + 2
+
         assert block_size <= self.block_size, \
             f"Cannot forward sequence of length {block_size}, block size is only {self.block_size}"
         state_embeddings = self.state_embedding(input_ids)  # (batch_size, block_size, state_size, n_embd)
-        # x = state_embeddings.view(batch_size * block_size, state_size, self.config.n_embd)
-        # if attention_mask is not None:
-        #     # flatten attention same as state embeddings:
-        #     flat_mask = attention_mask.view(batch_size * block_size, state_size).to(torch.bool)
-        #     # src_key_padding_mask expects True == “ignore this position”:
-        #     x = self.state_transformer(x, src_key_padding_mask=~flat_mask)
-        # else:
-        #     x = self.state_transformer(x)
-        #
-        # state_embeddings = x.view(batch_size, block_size, state_size, self.config.n_embd)
         if attention_mask is not None:
             state_embeddings = self.mean_pooling(state_embeddings, attention_mask)  # (batch_size, block_size, n_embd)
         else:
             state_embeddings = state_embeddings.squeeze(-2)  # (1, 1, n_embd)
 
+        # if labels is not None and self.model_type == 'reward_conditioned':
+        #     token_embeddings = torch.zeros(
+        #         (batch_size, block_size * (2 + current_n_goals) - int(targets is None), self.config.n_embd), dtype=torch.float32,
+        #         device=state_embeddings.device)
+
+        #     for i in range(current_n_goals):
+        #         rtg_embeddings = self.ret_emb(rtgs[:, i, :].unsqueeze(-1))  # (batch, block_size, n_embd)
+        #         # Modify RTG embedding
+        #         # gs with goal embeddings (add or concat)
+        #         if goal_idx is not None:
+        #             goal_embeddings = self.goal_emb(goal_idx[:, i, :])  # (batch, n_embd)
+        #             rtg_embeddings = rtg_embeddings + goal_embeddings
+        #         token_embeddings[:, i::n_layers, :] = rtg_embeddings
+
+        #     action_embeddings = self.action_embeddings(labels)  # (batch, block_size, n_embd)
+        #     token_embeddings[:, current_n_goals::n_layers, :] = state_embeddings
+        #     token_embeddings[:, current_n_goals + 1::n_layers, :] = action_embeddings[:, -input_ids.shape[1] + int(targets is None):, :]
+
         if labels is not None and self.model_type == 'reward_conditioned':
             token_embeddings = torch.zeros(
-                (batch_size, block_size * (2 + n_goals) - int(targets is None), self.config.n_embd), dtype=torch.float32,
+                (batch_size, block_size * (2 + current_n_goals) - int(targets is None), self.config.n_embd), 
+                dtype=torch.float32,
                 device=state_embeddings.device)
 
-            for i in range(n_goals):
+            for i in range(current_n_goals):
                 rtg_embeddings = self.ret_emb(rtgs[:, i, :].unsqueeze(-1))  # (batch, block_size, n_embd)
-                # Modify RTG embedding
-                # gs with goal embeddings (add or concat)
-                if goal is not None:
-                    goal_embeddings = self.goal_emb(goal[:, i, :])  # (batch, n_embd)
-                    rtg_embeddings = rtg_embeddings + goal_embeddings
+                
+                if goal_idx is not None:
+                    g_idx = goal_idx[:, i]
+                    goal_embeddings = self.goal_emb(g_idx)
+                    rtg_embeddings = rtg_embeddings + goal_embeddings.unsqueeze(1)
+                
                 token_embeddings[:, i::n_layers, :] = rtg_embeddings
-
-            action_embeddings = self.action_embeddings(labels)  # (batch, block_size, n_embd)
-            token_embeddings[:, n_goals::n_layers, :] = state_embeddings
-            token_embeddings[:, n_goals + 1::n_layers, :] = action_embeddings[:, -input_ids.shape[1] + int(targets is None):, :]
-
+                
         elif labels is None and self.model_type == 'reward_conditioned':  # only happens at very first timestep of evaluation
-            token_embeddings = torch.zeros((batch_size, block_size * (1 + n_goals), self.config.n_embd),
+            token_embeddings = torch.zeros((batch_size, block_size * (1 + current_n_goals), self.config.n_embd),
                                            dtype=torch.float32, device=state_embeddings.device)
-            for i in range(n_goals):
+            for i in range(current_n_goals):
                 rtg_embeddings = self.ret_emb(rtgs[:, i, :].unsqueeze(-1).type(torch.float32))
                 # Modify RTG embeddings with goal embeddings (add or concat)
-                if goal is not None:
-                    goal_embeddings = self.goal_emb(goal[:, i, :])  # (batch, n_embd)
-                    rtg_embeddings = rtg_embeddings + goal_embeddings
+                if goal_idx is not None:
+                    goal_embeddings = self.goal_emb(goal_idx[:, i])
+                    rtg_embeddings = rtg_embeddings + goal_embeddings.unsqueeze(1)
                 token_embeddings[:, i::n_layers - 1, :] = rtg_embeddings  # really just [:,0,:]
-            token_embeddings[:, n_goals::n_layers - 1, :] = state_embeddings  # really just [:,1,:]
+            token_embeddings[:, current_n_goals::n_layers - 1, :] = state_embeddings  # really just [:,1,:]
 
         elif labels is not None and self.model_type == 'naive':
             action_embeddings = self.action_embeddings(
@@ -354,9 +369,9 @@ class DtGPT(nn.Module):
         logits = self.head(x)
 
         if labels is not None and self.model_type == 'reward_conditioned':
-            logits = logits[:, n_goals::n_layers, :]  # only keep predictions from state_embeddings
+            logits = logits[:, current_n_goals::n_layers, :]  # only keep predictions from state_embeddings
         elif labels is None and self.model_type == 'reward_conditioned':
-            logits = logits[:, n_goals:, :]
+            logits = logits[:, current_n_goals:, :]
         elif labels is not None and self.model_type == 'naive':
             logits = logits[:, ::2, :]  # only keep predictions from state_embeddings
         elif labels is None and self.model_type == 'naive':
@@ -391,7 +406,7 @@ def top_k_logits(logits, k):
 
 @torch.no_grad()
 def sample(
-        model, x, steps, temperature=1.0, sample=False, top_k=None, actions=None, rtgs=None, attention=None, goal=None
+        model, x, steps, temperature=1.0, sample=False, top_k=None, actions=None, rtgs=None, attention=None, goal_idx=None
 ):
     """
     take a conditioning sequence of indices in x (of shape (b,t)) and predict the next token in
@@ -407,9 +422,12 @@ def sample(
         if actions is not None:
             actions = actions if actions.size(1) <= max_seq_len else actions[:, -max_seq_len:]  # crop context if needed
 
-        rtgs = rtgs if rtgs.size(1) <= max_seq_len else rtgs[:, -max_seq_len:]  # crop context if needed
+        if rtgs.dim() == 3:
+            rtgs = rtgs if rtgs.size(-1) <= max_seq_len else rtgs[:, :, -max_seq_len:]
+        else:
+            rtgs = rtgs if rtgs.size(1) <= max_seq_len else rtgs[:, -max_seq_len:]
         logits, _ = model(
-            input_ids=x_cond, labels=actions, targets=None, rtgs=rtgs, attention_mask=attention, goal=goal
+            input_ids=x_cond, labels=actions, targets=None, rtgs=rtgs, attention_mask=attention, goal_idx=goal_idx
         )
         # pluck the logits at the final step and scale by temperature
         logits = logits[:, -1, :] / temperature
@@ -435,6 +453,7 @@ def get_returns(ret, model, train_dataset, reward_func: Callable, device, k: int
     bos_token_id = train_dataset.dataset.tokenizer.bos_token_id
     eos_token_id = train_dataset.dataset.tokenizer.eos_token_id
     pad_token_id = train_dataset.dataset.tokenizer.pad_token_id
+    test_goal_idx = torch.tensor([0], dtype=torch.long).to(device)
 
     T_rewards, T_Qs = [], []
     done = True
@@ -496,7 +515,8 @@ def get_returns(ret, model, train_dataset, reward_func: Callable, device, k: int
                 sample=True,
                 actions=torch.tensor(actions, dtype=torch.long).to(device).unsqueeze(0),
                 rtgs=torch.tensor(rtgs, dtype=torch.float32).to(device).unsqueeze(0),
-                attention=torch.tensor(np.tril(np.ones(all_states.shape[1:])), dtype=torch.long).to(device).unsqueeze(0)
+                attention=torch.tensor(np.tril(np.ones(all_states.shape[1:])), dtype=torch.long).to(device).unsqueeze(0),
+                goal_idx=test_goal_idx
                 # timesteps=(min(j, self.config.max_timestep) * torch.ones((1, 1, 1), dtype=torch.int64).to(self.device)))
             )
 
