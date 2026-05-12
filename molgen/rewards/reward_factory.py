@@ -1,12 +1,13 @@
 from typing import Any, Union
 
 from molgen.rewards.functions.multi_reward import MultiReward
-from molgen.rewards.functions.rdkit_rewards import PenalizedLogPReward, QEDReward, pIC50Reward
+from molgen.rewards.functions.rdkit_rewards import PenalizedLogPReward, QEDReward, SASReward, pIC50Reward
 from molgen.rewards.reward import AbstractReward
 
 name_to_reward: dict[str, type[AbstractReward]] = {
     "QED": QEDReward,
     "PlogP": PenalizedLogPReward,
+    "SAS": SASReward,
     "pIC50": pIC50Reward     # Place holder for SSM-DTA integration
 }
 

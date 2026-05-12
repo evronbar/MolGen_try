@@ -55,6 +55,49 @@ def load_model(model_config, args):
     return model
 
 import copy
+
+
+def _as_reward_list(reward_func):
+    return reward_func if isinstance(reward_func, list) else [reward_func]
+
+
+def _normalize_goal_conditioning(ret, goal_idx, n_goals: int):
+    if isinstance(ret, (int, float)):
+        if n_goals != 1:
+            raise ValueError(f"Expected {n_goals} RTG targets, got scalar input")
+        rtgs = [[float(ret)]]
+    else:
+        ret = copy.deepcopy(ret)
+        if len(ret) != n_goals:
+            raise ValueError(f"Expected {n_goals} RTG targets, got {len(ret)}")
+        if isinstance(ret[0], (int, float)):
+            rtgs = [[float(r)] for r in ret]
+        else:
+            rtgs = [list(map(float, r)) for r in ret]
+            if any(len(r) == 0 for r in rtgs):
+                raise ValueError("Each RTG goal stream must contain at least one value")
+
+    if goal_idx is None:
+        goals = [[i] for i in range(n_goals)]
+    else:
+        goal_idx = copy.deepcopy(goal_idx)
+        if isinstance(goal_idx, int):
+            if n_goals != 1:
+                raise ValueError(f"Expected {n_goals} goal index streams, got scalar input")
+            goals = [[int(goal_idx)]]
+        else:
+            if len(goal_idx) != n_goals:
+                raise ValueError(f"Expected {n_goals} goal index streams, got {len(goal_idx)}")
+            if isinstance(goal_idx[0], int):
+                goals = [[int(g)] for g in goal_idx]
+            else:
+                goals = [list(map(int, g)) for g in goal_idx]
+                if any(len(g) == 0 for g in goals):
+                    raise ValueError("Each goal index stream must contain at least one value")
+
+    return rtgs, goals
+
+
 def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1, ret: float = 1.0, goal_idx=None):
     """
     Generate 'k' molecules using the pre-trained model's sample function.
@@ -70,14 +113,15 @@ def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1
     model.eval()  # Set the model to evaluation mode
 
     gen_smiles = []
+    reward_funcs = _as_reward_list(reward_func)
+    n_goals = len(reward_funcs)
     done = True
     for _ in tqdm(range(args.k)):
         terminated = False
         init_state = torch.tensor([tokenizer.bos_token_id], dtype=torch.int64)
         init_state = init_state.to(args.device).unsqueeze(0).unsqueeze(0)
         # first state is from env, first rtg is target return, and first timestep is 0
-        rtgs = copy.deepcopy(ret)
-        goal = copy.deepcopy(goal_idx) if goal_idx is not None else None
+        rtgs, goal = _normalize_goal_conditioning(ret, goal_idx, n_goals=n_goals)
         sampled_action = sample(
             model=model,
             x=init_state,
@@ -86,7 +130,7 @@ def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1
             sample=True,
             actions=None,
             rtgs=torch.tensor(rtgs, dtype=torch.float32).to(args.device).unsqueeze(0),
-            goal=torch.tensor(goal, dtype=torch.int64).to(args.device).unsqueeze(0) if goal_idx is not None else None,
+            goal=torch.tensor(goal, dtype=torch.int64).to(args.device).unsqueeze(0),
             # timesteps=torch.zeros((1, 1, 1), dtype=torch.int64).to(self.device)
         )
 
@@ -117,9 +161,10 @@ def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1
             all_states = torch.nn.functional.pad(all_states, (0, pad_size), value=tokenizer.pad_token_id)
             all_states = torch.cat([all_states, tensor_state], dim=1)
 
-            [r.append(r[-1]) for r in rtgs]
-            if goal_idx is not None and goal is not None:
-                [g.append(g[-1]) for g in goal]
+            for r in rtgs:
+                r.append(r[-1])
+            for g in goal:
+                g.append(g[-1])
             # all_states has all previous states and rtgs has all previous rtgs (will be cut to block_size in utils.sample)
             # timestep is just current timestep # TODO: check the tensor(actions) to verify its correct
             sampled_action = sample(
@@ -132,7 +177,7 @@ def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1
                 rtgs=torch.tensor(rtgs, dtype=torch.float32).to(args.device).unsqueeze(0),
                 attention=torch.tensor(np.tril(np.ones(all_states.shape[1:])), dtype=torch.long).to(
                     args.device).unsqueeze(0),
-                goal=torch.tensor(goal, dtype=torch.int64).to(args.device).unsqueeze(0) if goal_idx is not None else None,
+                goal=torch.tensor(goal, dtype=torch.int64).to(args.device).unsqueeze(0),
                 # timesteps=(min(j, self.config.max_timestep) * torch.ones((1, 1, 1), dtype=torch.int64).to(self.device)))
             )
 
@@ -572,6 +617,12 @@ def main():
 
     tokenizer = get_tokenizer(args.tokenizer_path)
     reward_functions = get_rewards(config["reward"])
+    reward_func_list = _as_reward_list(reward_functions)
+    n_goals = len(reward_func_list)
+    if args.model_type.lower() == ModelType.DT:
+        model_config["n_goals"] = n_goals
+        if len(args.rtg) != n_goals:
+            raise ValueError(f"Expected {n_goals} RTG targets in --rtg, got {len(args.rtg)}")
 
     # Get train dataset for novelty calculation
     kwargs = {}
@@ -624,7 +675,7 @@ def main():
         #     #         raise ValueError(f"Unrecognized reward type: {reward_type}")
         #
             reward_type = "reward_per_block"
-            reward_func = reward_functions
+            reward_func = reward_func_list
             rtg_value = [[float(r)] for r in args.rtg.values()]
             goal_idx = [[i] for i in range(len(reward_func))]   # [[0], [1]]
             if args.checkpoint:

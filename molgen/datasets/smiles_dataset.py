@@ -61,6 +61,8 @@ class PreTrainDecisionGPTSmilesDataset(PreTrainGPTSmilesDataset):
         super().__init__(smiles, tokenizer, string_type)
         self.reward_funcs = reward_func if isinstance(reward_func, list) else [reward_func]
         self.n_goals = len(self.reward_funcs)
+        if self.n_goals < 1:
+            raise ValueError("At least one reward function is required for DT training")
         self.n_molecules = len(self.dataset)
         self.reward_memory = [{} for _ in self.reward_funcs]
         self._trajectories = self._precompute_trajectories()
@@ -80,8 +82,8 @@ class PreTrainDecisionGPTSmilesDataset(PreTrainGPTSmilesDataset):
             trajectory_len = len(base_item["input_ids"])
             states = [base_item["input_ids"][:i + 1] for i in range(trajectory_len)]
 
-            rtgs = []
-            for goal_idx, reward_func in enumerate(self.reward_funcs):  # Iterate over goals
+            rtgs: list[list[float]] = []
+            for goal_idx, reward_func in enumerate(self.reward_funcs):
                 if self.string_type == "SMILES":
                     reward_to_go = reward_func(smiles)
                     reward_to_go = [reward_to_go] * trajectory_len
@@ -97,8 +99,13 @@ class PreTrainDecisionGPTSmilesDataset(PreTrainGPTSmilesDataset):
 
                 rtgs.append(reward_to_go)
 
+            if len(rtgs) != self.n_goals or any(len(goal_rtg) != trajectory_len for goal_rtg in rtgs):
+                raise ValueError(
+                    f"Invalid RTG layout for sample {mol_idx}: expected ({self.n_goals}, {trajectory_len})"
+                )
+
             results.append({
-                "rtgs": rtgs.copy(),                    # trajectory rtg - (block, 1)
+                "rtgs": rtgs.copy(),                    # trajectory rtg - (n_goals, block)
                 "input_ids": states.copy(),             # states - (block, state_len)
                 "labels": base_item["labels"].copy(),   # actions - (block, 1)
                 "attention_mask": [1] * trajectory_len,

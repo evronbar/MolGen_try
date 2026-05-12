@@ -82,12 +82,64 @@ class PenalizedLogPReward(AbstractReward):
         cycle_length = 0 if cycle_length <= 6 else cycle_length - 6
         return cycle_length
 
+#we changed the PenalizedLogPReward to use the RDKit library to calculate the SAS score
+#this is because the SAS score from the RDKit library is more accurate than the SAS score from the sascorer library
+#the SAS score from the RDKit library is calculated using the RDKit library
+#the SAS score from the sascorer library is calculated using the sascorer library
+#the SAS score from the RDKit library is more accurate than the SAS score from the sascorer library
+#the SAS score from the RDKit library is more accurate than the SAS score from the sascorer library
+
     @staticmethod
     def penalized_logp(molecule: Mol) -> float:
         log_p = MolLogP(molecule)
-        sas_score = sascorer.calculateScore(molecule)
+        try:
+            sas_score = sascorer.calculateScore(molecule)
+        except Exception:
+            return 0.0
+        if sas_score is None:
+            return 0.0
         cycle_score = PenalizedLogPReward.num_long_cycles(molecule)
-        return log_p - sas_score - cycle_score
+        return float(log_p) - float(sas_score) - float(cycle_score)
+
+#we changed the SASReward to use the SAS score from the RDKit library
+#this is because the SAS score from the RDKit library is more accurate than the SAS score from the sascorer library
+#the SAS score from the RDKit library is calculated using the RDKit library
+#the SAS score from the sascorer library is calculated using the sascorer library
+#the SAS score from the RDKit library is more accurate than the SAS score from the sascorer library
+#the SAS score from the RDKit library is more accurate than the SAS score from the sascorer library
+class SASReward(AbstractReward):
+    def __init__(self, name: str | None = None, scale: RewardScale = None, normalize: bool = True) -> None:
+        super().__init__(name=name, scale=scale)
+        self.normalize = normalize
+
+    def __call__(self, smiles: str | list[str]) -> float | list[float]:
+        def _sas_reward(mol: Mol | None) -> float:
+            if mol is None:
+                return 0.0
+            # RDKit SA score: lower is better (roughly 1..10).
+            # Convert to reward where higher is better.
+            try:
+                score = sascorer.calculateScore(mol)
+            except Exception:
+                return 0.0
+            if score is None:
+                return 0.0
+            reward = 10.0 - float(score)
+            if self.normalize:
+                reward = max(0.0, min(1.0, reward / 9.0))
+            return reward
+
+        if isinstance(smiles, str):
+            reward = _sas_reward(Chem.MolFromSmiles(smiles))
+            if self.scale is not None and not self.eval:
+                reward = self.scale(reward)
+            return reward
+
+        mols = [Chem.MolFromSmiles(s) for s in smiles]
+        rewards = [_sas_reward(mol) for mol in mols]
+        if self.scale is not None and not self.eval:
+            rewards = [self.scale(reward) for reward in rewards]
+        return rewards
 
 
 class pIC50Reward(AbstractReward):

@@ -16,6 +16,10 @@ from molgen.models.dt_gpt import sample
 from molgen.utils.plot_utils import save_plot
 
 
+def _as_reward_list(reward_func):
+    return reward_func if isinstance(reward_func, list) else [reward_func]
+
+
 class Trainer:
 
     def __init__(
@@ -125,6 +129,7 @@ class Trainer:
             if is_train:
                 self.optimizer.zero_grad(set_to_none=True)
                 tokens_since_last_step = 0
+            num_batches = len(loader)
             pbar = tqdm(enumerate(loader), total=len(loader)) if is_train else enumerate(loader)
             for it, batch in pbar:
                 if "cuda" in self.device:
@@ -146,8 +151,12 @@ class Trainer:
                 loss_value = float(loss.detach().item())
                 total_loss += loss_value
                 if is_train:
-                    # Accumulate gradients across micro-steps.
-                    (loss / gradient_accumulation_steps).backward()
+                    # Scale each micro-step by the actual accumulation window size
+                    # (handles final partial windows when len(loader) % grad_accum != 0).
+                    window_start = (it // gradient_accumulation_steps) * gradient_accumulation_steps
+                    window_end = min(window_start + gradient_accumulation_steps, num_batches)
+                    effective_accum_steps = window_end - window_start
+                    (loss / effective_accum_steps).backward()
                     tokens_since_last_step += int((y != self.ignore_token_id).sum().item())
 
                     is_accum_boundary = (it + 1) % gradient_accumulation_steps == 0
@@ -196,7 +205,6 @@ class Trainer:
         reward_eval_every = max(1, int(config.get("reward_eval_every", config.get("eval_every", 1))))
         reward_eval_target = float(config.get("reward_eval_target", 1.0))
         reward_eval_samples = max(1, int(config.get("reward_eval_samples", 10)))
-
         for epoch in range(epoch_n, epochs):
 
             epoch_loss = run_epoch('train', epoch_num=epoch)
@@ -238,85 +246,88 @@ class Trainer:
             [print(f"{ep_loss:.5f}") for ep_loss in epoch_losses]  # Debug print
             save_plot({"Loss_per_Epoch": epoch_losses})
 
-    def get_returns(self, ret: float, k: int = 10, temperature: float = 1.0) -> dict[str, float]:
+    def get_returns(self, ret, k: int = 10, temperature: float = 1.0) -> dict[str, float]:
+        self.model.train(False)
         raw_model = self.model.module if hasattr(self.model, "module") else self.model
-        n_goals = int(raw_model.config.n_goals)
-        reward_fns = self.reward_func if isinstance(self.reward_func, list) else [self.reward_func]
-        if len(reward_fns) < n_goals:
-            raise ValueError(f"Expected at least {n_goals} reward functions, got {len(reward_fns)}")
+        reward_funcs = _as_reward_list(self.reward_func)
+        n_goals = len(reward_funcs)
+        if raw_model.config.n_goals < n_goals:
+            raise ValueError(
+                f"Model config n_goals ({raw_model.config.n_goals}) is smaller than reward count ({n_goals})"
+            )
 
-        self.model.eval()
         goal_returns: dict[str, float] = {}
-        try:
-            for goal_idx in range(n_goals):
-                sampled_rewards: list[float] = []
-                for _ in range(k):
-                    terminated = False
-                    done = False
-                    init_state = torch.tensor([self.bos_token_id], dtype=torch.int64, device=self.device).unsqueeze(0).unsqueeze(0)
-                    rtgs = [ret]
-                    goal = [goal_idx]
+        for goal_idx in range(n_goals):
+            goal_rewards: list[float] = []
+            for _ in range(k):
+                terminated = False
+                done = False
+                init_state = torch.tensor([self.bos_token_id], dtype=torch.int64)
+                init_state = init_state.to(self.device).unsqueeze(0).unsqueeze(0)
+                rtgs = [[ret]]
+                goal = [[goal_idx]]
+                # first state is from env, first rtg is target return, and first timestep is 0
+                sampled_action = sample(
+                    model=self.model,
+                    x=init_state,
+                    steps=1,
+                    temperature=temperature,
+                    sample=True,
+                    actions=None,
+                    rtgs=torch.tensor(rtgs, dtype=torch.float32).to(self.device).unsqueeze(0),
+                    goal=torch.tensor(goal, dtype=torch.int64).to(self.device).unsqueeze(0),
+                    # timesteps=torch.zeros((1, 1, 1), dtype=torch.int64).to(self.device)
+                )
 
+                all_states = init_state
+                actions = []
+                state, reward_sum = [self.bos_token_id], 0
+                while True:
+                    action = sampled_action.cpu().numpy()[0, -1]
+                    actions += [action]
+                    state.append(action)
+                    sequence = self.train_dataset.dataset.tokenizer.decode(state, skip_special_tokens=True)[0]
+                    if self.train_dataset.dataset.string_type == "SELFIES":
+                        sequence = sf.decoder(sequence)
+                    reward = reward_funcs[goal_idx](sequence)
+                    done = action == self.eos_token_id  # mol is complete when [EOS] token is generated
+                    reward_sum = reward
+
+                    # if molecule length exceeds block_size and [EOS] token wasn't generated terminate generation
+                    if len(state) >= raw_model.config.max_seq_len and not done:
+                        terminated = True
+
+                    if done or terminated:
+                        goal_rewards.append(reward_sum)
+                        break
+
+                    tensor_state = torch.tensor(state, device=self.device).unsqueeze(0).unsqueeze(0)
+                    pad_size = tensor_state.shape[-1] - all_states.shape[-1]
+                    all_states = torch.nn.functional.pad(all_states, (0, pad_size), value=self.pad_token_id)
+                    all_states = torch.cat([all_states, tensor_state], dim=1)
+
+                    rtgs[0].append(rtgs[0][-1] - reward)
+                    goal[0].append(goal_idx)
+                    # all_states has all previous states and rtgs has all previous rtgs (will be cut to block_size in utils.sample)
                     sampled_action = sample(
                         model=self.model,
-                        x=init_state,
+                        x=all_states,
                         steps=1,
                         temperature=temperature,
                         sample=True,
-                        actions=None,
-                        rtgs=torch.tensor(rtgs, dtype=torch.float32, device=self.device).unsqueeze(0).unsqueeze(-1),
-                        goal=torch.tensor(goal, dtype=torch.int64, device=self.device).unsqueeze(0),
+                        actions=torch.tensor(actions, dtype=torch.long).to(self.device).unsqueeze(0),
+                        rtgs=torch.tensor(rtgs, dtype=torch.float32).to(self.device).unsqueeze(0),
+                        attention=torch.tensor(np.tril(np.ones(all_states.shape[1:])), dtype=torch.long).to(self.device).unsqueeze(0),
+                        goal=torch.tensor(goal, dtype=torch.int64).to(self.device).unsqueeze(0),
+                        # timesteps=(min(j, self.config.max_timestep) * torch.ones((1, 1, 1), dtype=torch.int64).to(self.device)))
                     )
+            goal_eval_return = float(sum(goal_rewards) / max(1, len(goal_rewards)))
+            goal_returns[f"reward/goal_{goal_idx}"] = goal_eval_return
+            print(f"goal {goal_idx} target return: {ret}, eval return: {goal_eval_return:.4f}")
 
-                    all_states = init_state
-                    actions = []
-                    reward_sum = 0.0
-                    while True:
-                        action = sampled_action.cpu().numpy()[0, -1]
-                        actions.append(action)
-                        state = [self.bos_token_id] + actions
-                        sequence = self.train_dataset.dataset.tokenizer.decode(state, skip_special_tokens=True)[0]
-                        if self.train_dataset.dataset.string_type == "SELFIES":
-                            sequence = sf.decoder(sequence)
-
-                        reward = float(reward_fns[goal_idx](sequence))
-                        done = action == self.eos_token_id  # mol is complete when [EOS] token is generated
-                        reward_sum = reward
-
-                        # if molecule length exceeds max_seq_len and [EOS] token wasn't generated terminate generation
-                        if len(state) >= raw_model.config.max_seq_len and not done:
-                            terminated = True
-
-                        if done or terminated:
-                            sampled_rewards.append(reward_sum)
-                            break
-
-                        tensor_state = torch.tensor(state, device=self.device).unsqueeze(0).unsqueeze(0)
-                        pad_size = tensor_state.shape[-1] - all_states.shape[-1]
-                        all_states = torch.nn.functional.pad(all_states, (0, pad_size), value=self.pad_token_id)
-                        all_states = torch.cat([all_states, tensor_state], dim=1)
-
-                        rtgs.append(rtgs[-1] - reward)
-                        goal.append(goal_idx)
-                        sampled_action = sample(
-                            model=self.model,
-                            x=all_states,
-                            steps=1,
-                            temperature=temperature,
-                            sample=True,
-                            actions=torch.tensor(actions, dtype=torch.long, device=self.device).unsqueeze(0),
-                            rtgs=torch.tensor(rtgs, dtype=torch.float32, device=self.device).unsqueeze(0),
-                            attention=torch.tensor(np.tril(np.ones(all_states.shape[1:])), dtype=torch.long, device=self.device).unsqueeze(0),
-                            goal=torch.tensor(goal, dtype=torch.int64, device=self.device).unsqueeze(0),
-                        )
-
-                mean_reward = float(np.mean(sampled_rewards)) if sampled_rewards else 0.0
-                goal_key = f"reward/goal_{goal_idx}"
-                goal_returns[goal_key] = mean_reward
-                print(f"reward eval | goal {goal_idx} | target={ret:.3f} | mean_reward={mean_reward:.4f}")
-        finally:
-            self.model.train(True)
-
+        goal_returns["reward/overall"] = float(sum(goal_returns.values()) / max(1, len(goal_returns)))
+        print(f"overall target return: {ret}, eval return: {goal_returns['reward/overall']:.4f}")
+        self.model.train(True)
         return goal_returns
 
 

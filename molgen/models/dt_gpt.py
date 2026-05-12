@@ -155,8 +155,10 @@ class DtGPT(nn.Module):
 
         # input embedding stem
         self.tok_emb = nn.Embedding(config.vocab_size, config.n_embd, dtype=torch.float32)
-        # self.pos_emb = nn.Parameter(torch.zeros(1, config.block_size, config.n_embd))
-        self.pos_emb = nn.Embedding(config.block_size, config.n_embd, dtype=torch.float32)
+        # Reserve enough positions for flattened DT token streams:
+        # [rtg_1..rtg_N, state, action] per time step.
+        self.max_token_positions = config.block_size * (config.n_goals + 2)
+        self.pos_emb = nn.Embedding(self.max_token_positions, config.n_embd, dtype=torch.float32)
         # self.global_pos_emb = nn.Parameter(torch.zeros(1, config.max_timestep + 1, config.n_embd))
         self.goal_emb = nn.Embedding(config.n_goals, config.n_embd, dtype=torch.float32)
         self.drop = nn.Dropout(config.dropout)
@@ -276,6 +278,12 @@ class DtGPT(nn.Module):
         # goals: optional - (batch, n_goals, block_size)
         if rtgs is None:
             raise ValueError("rtgs must be provided for DT forward pass")
+        if input_ids.dim() == 2:
+            input_ids = input_ids.unsqueeze(-1)
+        if input_ids.dim() != 3:
+            raise ValueError(f"input_ids must have shape (batch, time, state_len), got {tuple(input_ids.shape)}")
+        if attention_mask is not None and attention_mask.dim() == 2:
+            attention_mask = attention_mask.unsqueeze(-1)
         if rtgs.dim() == 2:
             rtgs = rtgs.unsqueeze(1)
         if goal is not None and goal.dim() == 2:
@@ -287,6 +295,8 @@ class DtGPT(nn.Module):
         block_size = input_ids.shape[1]
         state_size = input_ids.shape[2]
         n_goals = rtgs.shape[1]
+        if n_goals > self.config.n_goals:
+            raise ValueError(f"rtgs has {n_goals} goals but model was initialized with {self.config.n_goals}")
         n_layers = n_goals + 2
         assert block_size <= self.block_size, \
             f"Cannot forward sequence of length {block_size}, block size is only {self.block_size}"
@@ -303,8 +313,10 @@ class DtGPT(nn.Module):
         # state_embeddings = x.view(batch_size, block_size, state_size, self.config.n_embd)
         if attention_mask is not None:
             state_embeddings = self.mean_pooling(state_embeddings, attention_mask)  # (batch_size, block_size, n_embd)
+            timestep_attention_mask = attention_mask.any(dim=-1).to(state_embeddings.dtype)  # (batch_size, block_size)
         else:
             state_embeddings = state_embeddings.squeeze(-2)  # (1, 1, n_embd)
+            timestep_attention_mask = None
 
         if labels is not None and self.model_type == 'reward_conditioned':
             token_embeddings = torch.zeros(
@@ -350,10 +362,25 @@ class DtGPT(nn.Module):
         else:
             raise NotImplementedError()
 
-        n_blocks = n_layers - 1 if labels is None else n_layers  # only happens at very first timestep of evaluation
-        pos = torch.arange(
-            0, block_size, dtype=torch.long, device=input_ids.device
-        ).repeat_interleave(n_blocks).unsqueeze(0)
+        token_count = token_embeddings.shape[1]
+        if timestep_attention_mask is not None:
+            if self.model_type == 'reward_conditioned':
+                n_blocks = n_layers - 1 if labels is None else n_layers
+            elif self.model_type == 'naive':
+                n_blocks = 1 if labels is None else 2
+            else:
+                raise NotImplementedError()
+            expanded_attention_mask = timestep_attention_mask.repeat_interleave(n_blocks, dim=1)
+            expanded_attention_mask = expanded_attention_mask[:, :token_count].unsqueeze(-1)
+            token_embeddings = token_embeddings * expanded_attention_mask
+
+        if token_count > self.max_token_positions:
+            raise ValueError(
+                f"Token sequence length {token_count} exceeds max positional capacity {self.max_token_positions}"
+            )
+        # Flattened position indices create a dynamic prefix offset:
+        # state/action token positions shift automatically with n_goals.
+        pos = torch.arange(0, token_count, dtype=torch.long, device=input_ids.device).unsqueeze(0)
         pos_emb = self.pos_emb(pos)
 
         x = self.drop(token_embeddings + pos_emb[:, :token_embeddings.shape[1], :])
@@ -408,6 +435,8 @@ def sample(
     of block_size, unlike an RNN that has an infinite context window.
     """
     max_seq_len = model.config.max_seq_len
+    if rtgs is None:
+        raise ValueError("rtgs must be provided to sample() for DT models")
     model.eval()
     for k in range(steps):
         # x_cond = x if x.size(1) <= block_size else x[:, -block_size:] # crop context if needed
@@ -418,11 +447,19 @@ def sample(
         # Reward-to-go and goal are shaped (batch, n_goals, time); crop over time dimension.
         if rtgs.dim() == 2:
             rtgs = rtgs.unsqueeze(1)
+        if rtgs.dim() != 3:
+            raise ValueError(f"rtgs must have shape (batch, n_goals, time), got {tuple(rtgs.shape)}")
         rtgs = rtgs if rtgs.size(2) <= max_seq_len else rtgs[:, :, -max_seq_len:]
 
         if goal is not None:
             if goal.dim() == 2:
                 goal = goal.unsqueeze(1)
+            if goal.dim() != 3:
+                raise ValueError(f"goal must have shape (batch, n_goals, time), got {tuple(goal.shape)}")
+            if goal.shape[:2] != rtgs.shape[:2]:
+                raise ValueError(
+                    f"goal and rtgs must agree on batch and n_goals, got {tuple(goal.shape[:2])} vs {tuple(rtgs.shape[:2])}"
+                )
             goal = goal if goal.size(2) <= max_seq_len else goal[:, :, -max_seq_len:]
 
         if attention is not None and attention.size(1) > max_seq_len:
@@ -493,7 +530,7 @@ def get_returns(ret, model, train_dataset, reward_func: Callable, device, k: int
             j += 1
 
             # if molecule length exceeds block_size and [EOS] token wasn't generated terminate generation
-            if len(state) >= model.block_size // 3 and not done:
+            if len(state) >= model.config.max_seq_len and not done:
                 terminated = True
 
             if done or terminated:
