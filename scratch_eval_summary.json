@@ -1,0 +1,56 @@
+[
+  {
+    "run": "N1",
+    "checkpoint": "/home/evronba/MolGenOrg_MultiGoal/checkpoints/N1_Test/epoch_4.pth",
+    "requested_rtg": [
+      0.8
+    ],
+    "requested_qed": 0.8,
+    "requested_plogp": null,
+    "actual_qed_mean": null,
+    "actual_plogp_mean": null,
+    "generated_total": 20,
+    "valid_count": 0,
+    "valid_ratio": 0.0,
+    "unique_valid_count": 0,
+    "unique_over_valid_ratio": 0.0,
+    "sample_valid_smiles": []
+  },
+  {
+    "run": "N2",
+    "checkpoint": "/home/evronba/MolGenOrg_MultiGoal/checkpoints/N2_Test/epoch_4.pth",
+    "requested_rtg": [
+      0.9,
+      0.5
+    ],
+    "requested_qed": 0.9,
+    "requested_plogp": 0.5,
+    "actual_qed_mean": null,
+    "actual_plogp_mean": null,
+    "generated_total": 20,
+    "valid_count": 0,
+    "valid_ratio": 0.0,
+    "unique_valid_count": 0,
+    "unique_over_valid_ratio": 0.0,
+    "sample_valid_smiles": []
+  },
+  {
+    "run": "N3",
+    "checkpoint": "/home/evronba/MolGenOrg_MultiGoal/checkpoints/N3_Test/epoch_4.pth",
+    "requested_rtg": [
+      0.9,
+      0.5,
+      0.8
+    ],
+    "requested_qed": 0.9,
+    "requested_plogp": 0.5,
+    "actual_qed_mean": null,
+    "actual_plogp_mean": null,
+    "generated_total": 20,
+    "valid_count": 0,
+    "valid_ratio": 0.0,
+    "unique_valid_count": 0,
+    "unique_over_valid_ratio": 0.0,
+    "sample_valid_smiles": []
+  }
+]
