@@ -103,7 +103,7 @@ class PreTrainDecisionGPTSmilesDataset(PreTrainGPTSmilesDataset):
                 "labels": base_item["labels"].copy(),   # actions - (block, 1)
                 "attention_mask": [1] * trajectory_len,
                 "length": trajectory_len,
-                "goal_idx": list(range(self.n_goals)) if self.n_goals > 1 else None,
+                "goal_idx": list(range(self.n_goals)),
             })
 
         return results

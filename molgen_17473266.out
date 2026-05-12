@@ -1,0 +1,9 @@
+------------------------------------
+Sun 10 May 2026 22:10:49 IDT
+SLURM_JOBID:		17473266
+SLURM_JOB_NODELIST:	cs-pheno-02
+SLURM_SCRATCH_DIR:	
+Allocated Resouces:	cpu - 6 / mem - 32768 MB / gpu - 1
+SLURM_GPU_INDEX:	
+Running as evronba from bshapira account with normal QOS
+------------------------------------

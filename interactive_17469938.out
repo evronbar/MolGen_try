@@ -1,0 +1,12 @@
+------------------------------------
+Sun 10 May 2026 19:14:39 IDT
+SLURM_JOBID:		17469938
+SLURM_JOB_NODELIST:	ise-pheno-07
+SLURM_SCRATCH_DIR:	
+Allocated Resouces:	cpu - 4 / mem - 24576 MB / gpu - 1
+SLURM_GPU_INDEX:	
+Running as evronba from bshapira account with normal QOS
+------------------------------------
+Sun 10 May 2026 19:14:36 IDT
+ STARTING JOB WITH THE COMMAND:  sleep 600 
+[2026-05-10T21:14:50.017] error: *** JOB 17469938 ON ise-pheno-07 CANCELLED AT 2026-05-10T21:14:50 DUE TO TIME LIMIT ***

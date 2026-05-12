@@ -274,6 +274,14 @@ class DtGPT(nn.Module):
         # targets: (batch, block_size, 1)
         # rtgs: (batch, n_goals, block_size)
         # goals: optional - (batch, n_goals, block_size)
+        if rtgs is None:
+            raise ValueError("rtgs must be provided for DT forward pass")
+        if rtgs.dim() == 2:
+            rtgs = rtgs.unsqueeze(1)
+        if goal is not None and goal.dim() == 2:
+            goal = goal.unsqueeze(1)
+        if goal is not None and goal.shape[1] != rtgs.shape[1]:
+            raise ValueError(f"goal and rtgs must agree on n_goals, got {goal.shape[1]} and {rtgs.shape[1]}")
 
         batch_size = input_ids.shape[0]
         block_size = input_ids.shape[1]
@@ -407,7 +415,19 @@ def sample(
         if actions is not None:
             actions = actions if actions.size(1) <= max_seq_len else actions[:, -max_seq_len:]  # crop context if needed
 
-        rtgs = rtgs if rtgs.size(1) <= max_seq_len else rtgs[:, -max_seq_len:]  # crop context if needed
+        # Reward-to-go and goal are shaped (batch, n_goals, time); crop over time dimension.
+        if rtgs.dim() == 2:
+            rtgs = rtgs.unsqueeze(1)
+        rtgs = rtgs if rtgs.size(2) <= max_seq_len else rtgs[:, :, -max_seq_len:]
+
+        if goal is not None:
+            if goal.dim() == 2:
+                goal = goal.unsqueeze(1)
+            goal = goal if goal.size(2) <= max_seq_len else goal[:, :, -max_seq_len:]
+
+        if attention is not None and attention.size(1) > max_seq_len:
+            attention = attention[:, -max_seq_len:, :]
+
         logits, _ = model(
             input_ids=x_cond, labels=actions, targets=None, rtgs=rtgs, attention_mask=attention, goal=goal
         )

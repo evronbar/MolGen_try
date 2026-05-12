@@ -1,0 +1,106 @@
+
+A module that was compiled using NumPy 1.x cannot be run in
+NumPy 2.4.3 as it may crash. To support both 1.x and 2.x
+versions of NumPy, modules must be compiled with NumPy 2.0.
+Some module may need to rebuild instead e.g. with 'pybind11>=2.12'.
+
+If you are a user of the module, the easiest solution will be to
+downgrade to 'numpy<2' or try to upgrade the affected module.
+We expect that some modules will need time to support NumPy 2.
+
+Traceback (most recent call last):  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 8, in <module>
+    from molgen.datasets.dataset_factory import get_dataset
+  File "/home/evronba/MolGenOrg/molgen/datasets/dataset_factory.py", line 4, in <module>
+    from rdkit import Chem
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/rdkit/Chem/__init__.py", line 18, in <module>
+    from rdkit import DataStructs
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/rdkit/DataStructs/__init__.py", line 13, in <module>
+    from rdkit.DataStructs import cDataStructs
+AttributeError: _ARRAY_API not found
+
+A module that was compiled using NumPy 1.x cannot be run in
+NumPy 2.4.3 as it may crash. To support both 1.x and 2.x
+versions of NumPy, modules must be compiled with NumPy 2.0.
+Some module may need to rebuild instead e.g. with 'pybind11>=2.12'.
+
+If you are a user of the module, the easiest solution will be to
+downgrade to 'numpy<2' or try to upgrade the affected module.
+We expect that some modules will need time to support NumPy 2.
+
+Traceback (most recent call last):  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 8, in <module>
+    from molgen.datasets.dataset_factory import get_dataset
+  File "/home/evronba/MolGenOrg/molgen/datasets/dataset_factory.py", line 4, in <module>
+    from rdkit import Chem
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/rdkit/Chem/__init__.py", line 20, in <module>
+    from rdkit.Chem import rdchem
+AttributeError: _ARRAY_API not found
+
+A module that was compiled using NumPy 1.x cannot be run in
+NumPy 2.4.3 as it may crash. To support both 1.x and 2.x
+versions of NumPy, modules must be compiled with NumPy 2.0.
+Some module may need to rebuild instead e.g. with 'pybind11>=2.12'.
+
+If you are a user of the module, the easiest solution will be to
+downgrade to 'numpy<2' or try to upgrade the affected module.
+We expect that some modules will need time to support NumPy 2.
+
+Traceback (most recent call last):  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 8, in <module>
+    from molgen.datasets.dataset_factory import get_dataset
+  File "/home/evronba/MolGenOrg/molgen/datasets/dataset_factory.py", line 4, in <module>
+    from rdkit import Chem
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/rdkit/Chem/__init__.py", line 24, in <module>
+    from rdkit.Chem.rdmolops import *
+AttributeError: _ARRAY_API not found
+
+A module that was compiled using NumPy 1.x cannot be run in
+NumPy 2.4.3 as it may crash. To support both 1.x and 2.x
+versions of NumPy, modules must be compiled with NumPy 2.0.
+Some module may need to rebuild instead e.g. with 'pybind11>=2.12'.
+
+If you are a user of the module, the easiest solution will be to
+downgrade to 'numpy<2' or try to upgrade the affected module.
+We expect that some modules will need time to support NumPy 2.
+
+Traceback (most recent call last):  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 17, in <module>
+    from molgen.rewards.reward_factory import get_rewards
+  File "/home/evronba/MolGenOrg/molgen/rewards/reward_factory.py", line 4, in <module>
+    from molgen.rewards.functions.rdkit_rewards import PenalizedLogPReward, QEDReward, pIC50Reward
+  File "/home/evronba/MolGenOrg/molgen/rewards/functions/rdkit_rewards.py", line 12, in <module>
+    import sascorer
+  File "/home/evronba/MolGenOrg/molgen/utils/sascorer.py", line 20, in <module>
+    from rdkit.Chem import rdFingerprintGenerator, rdMolDescriptors
+AttributeError: _ARRAY_API not found
+/home/evronba/MolGenOrg/molgen/utils/train_utils.py:28: UserWarning: CUDA is not available or torch_xla is imported. Disabling autocast.
+  ctx = torch.amp.autocast(device_type=device, dtype=ptdtype)
+/home/evronba/MolGenOrg/molgen/utils/train_utils.py:29: UserWarning: torch.cuda.amp.GradScaler is enabled, but CUDA is not available.  Disabling.
+  scaler = torch.amp.GradScaler(device, enabled=(dtype == "float16"))
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 160, in <module>
+    run_training(args)
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 76, in run_training
+    model = get_model(args.model_type, model_config).to(device)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1381, in to
+    return self._apply(convert)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 933, in _apply
+    module._apply(fn)
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 964, in _apply
+    param_applied = fn(param)
+                    ^^^^^^^^^
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1367, in convert
+    return t.to(
+           ^^^^^
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/cuda/__init__.py", line 417, in _lazy_init
+    raise AssertionError("Torch not compiled with CUDA enabled")
+AssertionError: Torch not compiled with CUDA enabled

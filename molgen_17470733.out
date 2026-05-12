@@ -1,0 +1,21 @@
+------------------------------------
+Sun 10 May 2026 19:48:04 IDT
+SLURM_JOBID:		17470733
+SLURM_JOB_NODELIST:	ise-pheno-08
+SLURM_SCRATCH_DIR:	
+Allocated Resouces:	cpu - 6 / mem - 32768 MB / gpu - 0
+SLURM_GPU_INDEX:	0
+Running as evronba from bshapira account with normal QOS
+------------------------------------
+SLURM_JOBID=17470733
+SLURM_JOB_NODELIST=ise-pheno-08
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 8, in <module>
+    from molgen.datasets.dataset_factory import get_dataset
+  File "/home/evronba/MolGenOrg/molgen/datasets/dataset_factory.py", line 9, in <module>
+    from molgen.datasets.smiles_dataset import PreTrainGPTSmilesDataset, PreTrainDecisionGPTSmilesDataset
+  File "/home/evronba/MolGenOrg/molgen/datasets/smiles_dataset.py", line 7, in <module>
+    import selfies as sf
+ModuleNotFoundError: No module named 'selfies'

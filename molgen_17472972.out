@@ -1,0 +1,12 @@
+------------------------------------
+Sun 10 May 2026 21:43:28 IDT
+SLURM_JOBID:		17472972
+SLURM_JOB_NODELIST:	ise-pheno-10
+SLURM_SCRATCH_DIR:	
+Allocated Resouces:	cpu - 6 / mem - 32768 MB / gpu - 1
+SLURM_GPU_INDEX:	
+Running as evronba from bshapira account with normal QOS
+------------------------------------
+Setting up torch
+Running using device='cuda' ptdtype=torch.bfloat16
+Building model DT and Dataset DT_SMILES

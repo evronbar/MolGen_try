@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 160, in <module>
+    run_training(args)
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 51, in run_training
+    with open(args.config_path, "rb") as fd:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'data/configs/dt_smaller.toml'

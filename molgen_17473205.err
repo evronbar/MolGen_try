@@ -1,0 +1,25 @@
+  0%|          | 0/256 [00:00<?, ?it/s]100%|██████████| 256/256 [00:00<00:00, 2899.17it/s]
+Computing molecule trajectories:   0%|          | 0/256 [00:00<?, ?it/s]Computing molecule trajectories:   0%|          | 1/256 [00:00<01:08,  3.70it/s]Computing molecule trajectories:  19%|█▉        | 48/256 [00:00<00:01, 164.79it/s]Computing molecule trajectories:  38%|███▊      | 98/256 [00:00<00:00, 274.82it/s]Computing molecule trajectories:  58%|█████▊    | 148/256 [00:00<00:00, 344.91it/s]Computing molecule trajectories:  77%|███████▋  | 197/256 [00:00<00:00, 389.88it/s]Computing molecule trajectories:  98%|█████████▊| 250/256 [00:00<00:00, 430.64it/s]Computing molecule trajectories: 100%|██████████| 256/256 [00:00<00:00, 325.09it/s]
+Computing molecule trajectories:   0%|          | 0/25 [00:00<?, ?it/s]Computing molecule trajectories: 100%|██████████| 25/25 [00:00<00:00, 466.18it/s]
+Processing dataset:   0%|          | 0/256 [00:00<?, ?it/s]Processing dataset: 100%|██████████| 256/256 [00:00<00:00, 2386092.94it/s]
+Processing dataset:   0%|          | 0/25 [00:00<?, ?it/s]Processing dataset: 100%|██████████| 25/25 [00:00<00:00, 676500.65it/s]
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/evronba/.netrc.
+wandb: Currently logged in as: barevron (barevron-ben-gurion-university-of-the-negev) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: ERROR permission denied
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 160, in <module>
+    run_training(args)
+  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 110, in run_training
+    wandb.init(  # type: ignore
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/wandb/sdk/wandb_init.py", line 1603, in init
+    get_sentry().reraise(e)
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/wandb/analytics/sentry.py", line 190, in reraise
+    raise exc.with_traceback(tb)
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/wandb/sdk/wandb_init.py", line 1586, in init
+    run = wi.init(run_settings, run_config, run_printer)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/wandb/sdk/wandb_init.py", line 1045, in init
+    raise error
+wandb.errors.errors.CommError: permission denied
