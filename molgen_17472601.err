@@ -1,67 +1,0 @@
-  0%|          | 0/256 [00:00<?, ?it/s]100%|██████████| 256/256 [00:00<00:00, 2976.54it/s]
-Computing molecule trajectories:   0%|          | 0/256 [00:00<?, ?it/s]Computing molecule trajectories:   0%|          | 1/256 [00:00<01:08,  3.71it/s]Computing molecule trajectories:  19%|█▉        | 49/256 [00:00<00:01, 167.57it/s]Computing molecule trajectories:  39%|███▊      | 99/256 [00:00<00:00, 275.91it/s]Computing molecule trajectories:  58%|█████▊    | 149/256 [00:00<00:00, 347.08it/s]Computing molecule trajectories:  77%|███████▋  | 198/256 [00:00<00:00, 391.40it/s]Computing molecule trajectories:  98%|█████████▊| 251/256 [00:00<00:00, 433.79it/s]Computing molecule trajectories: 100%|██████████| 256/256 [00:00<00:00, 326.49it/s]
-Computing molecule trajectories:   0%|          | 0/25 [00:00<?, ?it/s]Computing molecule trajectories: 100%|██████████| 25/25 [00:00<00:00, 473.44it/s]
-Processing dataset:   0%|          | 0/256 [00:00<?, ?it/s]Processing dataset: 100%|██████████| 256/256 [00:00<00:00, 1903797.56it/s]
-Processing dataset:   0%|          | 0/25 [00:00<?, ?it/s]Processing dataset: 100%|██████████| 25/25 [00:00<00:00, 659481.76it/s]
-  0%|          | 0/4 [00:00<?, ?it/s]  0%|          | 0/4 [00:00<?, ?it/s]
-Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 160, in <module>
-    run_training(args)
-  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 119, in run_training
-    run_dt_training(
-  File "/home/evronba/MolGenOrg/molgen/training/train_dt.py", line 313, in run_dt_training
-    trainer.train(optimizer)
-  File "/home/evronba/MolGenOrg/molgen/training/train_dt.py", line 197, in train
-    epoch_loss = run_epoch('train', epoch_num=epoch)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/MolGenOrg/molgen/training/train_dt.py", line 140, in run_epoch
-    logits, loss = model(
-                   ^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/MolGenOrg/molgen/models/dt_gpt.py", line 352, in forward
-    x = self.blocks(x)
-        ^^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/container.py", line 250, in forward
-    input = module(input)
-            ^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/MolGenOrg/molgen/models/dt_gpt.py", line 141, in forward
-    x = x + self.mlp(self.ln_2(x))
-            ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/MolGenOrg/molgen/models/dt_gpt.py", line 125, in forward
-    x = self.gelu(x)
-        ^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/torch/nn/modules/activation.py", line 734, in forward
-    return F.gelu(input, approximate=self.approximate)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 156.00 MiB. GPU 0 has a total capacity of 10.90 GiB of which 145.25 MiB is free. Including non-PyTorch memory, this process has 10.76 GiB memory in use. Of the allocated memory 10.45 GiB is allocated by PyTorch, and 155.90 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

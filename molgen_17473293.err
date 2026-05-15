@@ -1,25 +1,0 @@
-  0%|          | 0/256 [00:00<?, ?it/s]100%|██████████| 256/256 [00:00<00:00, 2908.99it/s]
-Computing molecule trajectories:   0%|          | 0/256 [00:00<?, ?it/s]Computing molecule trajectories:   0%|          | 1/256 [00:00<01:05,  3.89it/s]Computing molecule trajectories:  19%|█▉        | 48/256 [00:00<00:01, 170.14it/s]Computing molecule trajectories:  38%|███▊      | 98/256 [00:00<00:00, 280.51it/s]Computing molecule trajectories:  57%|█████▋    | 147/256 [00:00<00:00, 348.11it/s]Computing molecule trajectories:  77%|███████▋  | 196/256 [00:00<00:00, 392.56it/s]Computing molecule trajectories:  97%|█████████▋| 248/256 [00:00<00:00, 429.72it/s]Computing molecule trajectories: 100%|██████████| 256/256 [00:00<00:00, 329.39it/s]
-Computing molecule trajectories:   0%|          | 0/25 [00:00<?, ?it/s]Computing molecule trajectories: 100%|██████████| 25/25 [00:00<00:00, 467.97it/s]
-Processing dataset:   0%|          | 0/256 [00:00<?, ?it/s]Processing dataset: 100%|██████████| 256/256 [00:00<00:00, 2097152.00it/s]
-Processing dataset:   0%|          | 0/25 [00:00<?, ?it/s]Processing dataset: 100%|██████████| 25/25 [00:00<00:00, 639375.61it/s]
-wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/evronba/.netrc.
-wandb: Currently logged in as: barevron (barevron-ben-gurion-university-of-the-negev) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
-wandb: ERROR entity barevron not found during upsertBucket
-Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 160, in <module>
-    run_training(args)
-  File "/home/evronba/MolGenOrg/scripts/pretrain.py", line 110, in run_training
-    wandb.init(  # type: ignore
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/wandb/sdk/wandb_init.py", line 1603, in init
-    get_sentry().reraise(e)
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/wandb/analytics/sentry.py", line 190, in reraise
-    raise exc.with_traceback(tb)
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/wandb/sdk/wandb_init.py", line 1586, in init
-    run = wi.init(run_settings, run_config, run_printer)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/evronba/.conda/envs/molgen/lib/python3.11/site-packages/wandb/sdk/wandb_init.py", line 1045, in init
-    raise error
-wandb.errors.errors.CommError: entity barevron not found during upsertBucket
