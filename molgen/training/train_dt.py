@@ -227,12 +227,17 @@ class Trainer:
                 wandb.log(log_metrics)
 
             # supports early stopping based on the test loss, or save every X epochs if no test set
-            good_model = (epoch > 2 and (self.test_dataset is None and (epoch % 1 == 0))) or test_loss < best_loss
+            if self.test_dataset is None:
+                save_every_epoch = bool(config.get("save_every_epoch", False))
+                good_model = save_every_epoch or (epoch > 2 and (epoch % 1 == 0))
+            else:
+                good_model = test_loss < best_loss
             if self.save_path is not None and good_model:
                 best_loss = test_loss
                 self.save_checkpoint(epoch)
 
-            # self.save_checkpoint(epoch, ckpt_name="latest.pth")
+            if self.save_path is not None and bool(config.get("save_latest_checkpoint", False)):
+                self.save_checkpoint(epoch, ckpt_name="latest.pth")
 
             # -- pass in target returns
             # model_type = self.model.module.model_type if hasattr(self.model, "module") else self.model.model_type

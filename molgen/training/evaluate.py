@@ -3,6 +3,7 @@ import json
 import math
 import tomllib
 import argparse
+import traceback
 from tqdm import tqdm
 from typing import Callable, Dict, List, Tuple, Union, Optional
 
@@ -28,11 +29,52 @@ from molgen.rewards.reward_factory import get_rewards
 from molgen.datasets.dataset_options import DatasetType
 from molgen.datasets.dataset_factory import get_dataset
 from molgen.tokenizers.tokenizer_factory import get_tokenizer
-from molgen.rewards.functions.rdkit_rewards import PenalizedLogPReward, QEDReward
+from molgen.rewards.functions.rdkit_rewards import PenalizedLogPReward, QEDReward, SASReward
 from molgen.utils.mol_utils import convert_to_molecules, filter_invalid_molecules
 from molgen.utils.metrics import calc_qed, calc_sas, calc_diversity, calc_novelty, calc_valid_molecules, calc_logp
 
 np.random.seed = 0
+
+
+def _write_fallback_eval_outputs(output_dir: str, generated_smiles: List[str], error: Exception):
+    os.makedirs(output_dir, exist_ok=True)
+    safe_smiles = [s for s in generated_smiles if isinstance(s, str)]
+    valid_generated_smiles = [s for s in safe_smiles if Chem.MolFromSmiles(s) is not None]
+    validity = (len(valid_generated_smiles) / len(safe_smiles)) if safe_smiles else 0.0
+    average_length = (sum(len(s) for s in safe_smiles) / len(safe_smiles)) if safe_smiles else 0.0
+
+    stats = {
+        "validity": float(validity),
+        "diversity": 0.0,
+        "novelty": 0.0,
+        "count": int(len(valid_generated_smiles)),
+        "average_length": float(average_length),
+        "SR - QED": 0.0,
+        "single_goal_conditioning_accuracy": 0.0,
+        "multi_goal_conditioning_accuracy": 0.0,
+        "fallback_reason": repr(error),
+    }
+    with open(os.path.join(output_dir, "stats.json"), "w", encoding="utf-8") as f:
+        json.dump(stats, f)
+
+    df = pd.DataFrame({"Smiles": valid_generated_smiles})
+    df.to_csv(os.path.join(output_dir, "generated_smiles.csv"), index=False)
+    df.drop_duplicates(subset=["Smiles"]).to_csv(
+        os.path.join(output_dir, "unique_generated_smiles.csv"), index=False
+    )
+    return {"Smiles": valid_generated_smiles, "fallback_error": [repr(error)] * len(valid_generated_smiles)}
+
+
+def _attach_conditioning_accuracy_metrics(stats: Dict[str, Union[float, int]]) -> Dict[str, Union[float, int]]:
+    single = float(stats.get("SR - QED", 0.0))
+    multi_candidates: List[float] = []
+    for key, value in stats.items():
+        if key.startswith("SR - ") and key != "SR - QED" and isinstance(value, (int, float)):
+            multi_candidates.append(float(value))
+    multi = float(sum(multi_candidates) / len(multi_candidates)) if multi_candidates else 0.0
+    stats["single_goal_conditioning_accuracy"] = single
+    stats["multi_goal_conditioning_accuracy"] = multi
+    return stats
 
 def load_model(model_config, args):
     """
@@ -98,7 +140,56 @@ def _normalize_goal_conditioning(ret, goal_idx, n_goals: int):
     return rtgs, goals
 
 
-def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1, ret: float = 1.0, goal_idx=None):
+def _canonical_reward_name(name: str) -> str:
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+
+def _decode_smiles(tokenizer, token_ids: List[int]) -> str:
+    decoded = tokenizer.decode(token_ids, skip_special_tokens=True)
+    if isinstance(decoded, list):
+        return decoded[0] if decoded else ""
+    if isinstance(decoded, str):
+        return decoded
+    return str(decoded)
+
+
+def _resolve_rtg_streams(
+    rtg_targets: Dict[str, float],
+    reward_cfg: Dict[str, Union[bool, List[Dict[str, Union[str, Dict[str, Union[str, float]]]]]]],
+    rtg_scale_mode: str = "auto",
+) -> List[List[float]]:
+    key_to_value: Dict[str, float] = {}
+    for key, value in rtg_targets.items():
+        key_to_value[_canonical_reward_name(str(key))] = float(value)
+
+    resolved: List[List[float]] = []
+    for fn_cfg in reward_cfg.get("functions", []):
+        reward_name = str(fn_cfg["type"])
+        lookup_key = _canonical_reward_name(reward_name)
+        if lookup_key not in key_to_value:
+            raise ValueError(
+                f"Missing RTG value for reward '{reward_name}'. Received keys: {list(rtg_targets.keys())}"
+            )
+        raw_target = key_to_value[lookup_key]
+        scaled_target = raw_target
+        scale_cfg = fn_cfg.get("scale")
+        if isinstance(scale_cfg, dict) and str(scale_cfg.get("name", "")).lower() == "mult":
+            factor = float(scale_cfg.get("factor", 1.0))
+            if rtg_scale_mode == "train_scale":
+                scaled_target = raw_target * factor
+            elif rtg_scale_mode == "auto" and abs(raw_target) > 1.0:
+                scaled_target = raw_target * factor
+            print(
+                f"[RTG] {reward_name}: input={raw_target:.6g}, factor={factor:.6g}, used={scaled_target:.6g}, mode={rtg_scale_mode}"
+            )
+        else:
+            print(f"[RTG] {reward_name}: input={raw_target:.6g}, used={scaled_target:.6g}, mode={rtg_scale_mode}")
+        resolved.append([scaled_target])
+
+    return resolved
+
+
+def generate_molecules(model, tokenizer, reward_func, args, temperature: float = 1.0, top_k: Optional[int] = None, ret: float = 1.0, goal_idx=None):
     """
     Generate 'k' molecules using the pre-trained model's sample function.
 
@@ -129,8 +220,9 @@ def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1
             temperature=temperature,
             sample=True,
             actions=None,
-            rtgs=torch.tensor(rtgs, dtype=torch.float32).to(args.device).unsqueeze(0),
-            goal=torch.tensor(goal, dtype=torch.int64).to(args.device).unsqueeze(0),
+            rtgs=torch.tensor(rtgs, dtype=torch.float32, device=args.device).unsqueeze(0),
+            goal=torch.tensor(goal, dtype=torch.int64, device=args.device).unsqueeze(0),
+            top_k=top_k,
             # timesteps=torch.zeros((1, 1, 1), dtype=torch.int64).to(self.device)
         )
 
@@ -153,7 +245,7 @@ def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1
                 terminated = True
 
             if done or terminated:
-                gen_smiles.append(tokenizer.decode(state, skip_special_tokens=True)[0])
+                gen_smiles.append(_decode_smiles(tokenizer, state))
                 break
 
             tensor_state = torch.tensor(state, device=args.device).unsqueeze(0).unsqueeze(0)
@@ -165,6 +257,16 @@ def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1
                 r.append(r[-1])
             for g in goal:
                 g.append(g[-1])
+
+            expected_t = all_states.shape[1]
+            if any(len(r) != expected_t for r in rtgs):
+                raise RuntimeError(
+                    f"RTG streams length mismatch: expected {expected_t}, got {[len(r) for r in rtgs]}"
+                )
+            if any(len(g) != expected_t for g in goal):
+                raise RuntimeError(
+                    f"Goal streams length mismatch: expected {expected_t}, got {[len(g) for g in goal]}"
+                )
             # all_states has all previous states and rtgs has all previous rtgs (will be cut to block_size in utils.sample)
             # timestep is just current timestep # TODO: check the tensor(actions) to verify its correct
             sampled_action = sample(
@@ -174,10 +276,11 @@ def generate_molecules(model, tokenizer, reward_func, args, temperature: int = 1
                 temperature=temperature,
                 sample=True,
                 actions=torch.tensor(actions, dtype=torch.long).to(args.device).unsqueeze(0),
-                rtgs=torch.tensor(rtgs, dtype=torch.float32).to(args.device).unsqueeze(0),
+                rtgs=torch.tensor(rtgs, dtype=torch.float32, device=args.device).unsqueeze(0),
                 attention=torch.tensor(np.tril(np.ones(all_states.shape[1:])), dtype=torch.long).to(
                     args.device).unsqueeze(0),
-                goal=torch.tensor(goal, dtype=torch.int64).to(args.device).unsqueeze(0),
+                goal=torch.tensor(goal, dtype=torch.int64, device=args.device).unsqueeze(0),
+                top_k=top_k,
                 # timesteps=(min(j, self.config.max_timestep) * torch.ones((1, 1, 1), dtype=torch.int64).to(self.device)))
             )
 
@@ -489,6 +592,7 @@ def get_stats(generated_smiles: List[str],
 
     print('calculating average SMILES length')
     stats['average_length'] = sum(map(len, generated_smiles)) / len(generated_smiles)
+    stats = _attach_conditioning_accuracy_metrics(stats)
 
     print(stats)
     if not os.path.exists(generated_path):
@@ -603,11 +707,26 @@ def main():
     parser.add_argument("--rtg", type=str, required=True,
                         help="Return-to-go targets as a JSON dictionary, e.g., '{\"QED\": 0.8, \"pLogP\": 0.6}'")
     parser.add_argument("--density", action="store_true", help="Generate density plots")
+    parser.add_argument("--density_output_path", type=str, default=os.path.join(os.getcwd(), "plots"),
+                        help="Folder where density plots are written.")
     parser.add_argument("--stats", action="store_true", help="Generate stats")
+    parser.add_argument("--temperature", type=float, default=1.0, help="Sampling temperature for generation.")
+    parser.add_argument("--top_k", type=int, default=None, help="Optional top-k token filtering during generation.")
+    parser.add_argument(
+        "--rtg_scale_mode",
+        type=str,
+        choices=["none", "auto", "train_scale"],
+        default="auto",
+        help=(
+            "How to match evaluation RTGs to training scale. "
+            "'none' keeps values as-is; 'auto' multiplies only large values (>1) for scaled rewards; "
+            "'train_scale' always applies training multiplier scale."
+        ),
+    )
 
     args = parser.parse_args()
 
-    assert (args.checkpoint or args.smiles), "Either --checkpoint or --smiles must be provided"
+    assert (args.checkpoint or args.smiles or args.density), "Either --checkpoint, --smiles, or --density must be provided"
     args.rtg = json.loads(args.rtg)
 
     with open(args.config_path, "rb") as fd:
@@ -635,24 +754,32 @@ def main():
     )
 
     if args.density:
-        tests = ["rtg = 1.00", "rtg = 0.65", "rtg = 0.35"]# os.listdir(args.results_path)
+        tests = sorted(
+            entry
+            for entry in os.listdir(args.results_path)
+            if os.path.isfile(os.path.join(args.results_path, entry, "generated_smiles.csv"))
+        )
+        if not tests:
+            raise FileNotFoundError(f"No generated_smiles.csv files found under {args.results_path}")
 
         reward_fns = {
             "QED": QEDReward(),
-            "pLogP": PenalizedLogPReward()
+            "pLogP": PenalizedLogPReward(),
+            "SAS": SASReward(),
         }
 
         generate_density_plots(
             test_names=tests,
             reward_fns=reward_fns,
             train_set=train_dataset,
-            results_folder=args.results_path
+            results_folder=args.results_path,
+            output_folder=args.density_output_path,
         )
 
     if args.stats:
         if args.checkpoint:
             dirname = os.path.dirname(args.checkpoint)
-            checkpoints = os.listdir(dirname)
+            checkpoints = [os.path.basename(args.checkpoint)]
         else:
             checkpoints = ['pre_generated']
         for epoch in checkpoints:
@@ -660,7 +787,7 @@ def main():
             if args.checkpoint:
                 args.checkpoint = os.path.join(dirname, epoch)
                 print(f"loading model {args.checkpoint}")
-                model = load_model(model_config, args).to("cuda")
+                model = load_model(model_config, args).to(args.device)
             bins, success_rates, validity = [], [], []
         # for i, (reward_type, rtg_value) in enumerate(args.rtg.items()):    # np.linspace(0.1, 1, 10):
         #     reward_func = reward_functions[i] if isinstance(reward_functions, list) else reward_functions
@@ -676,12 +803,21 @@ def main():
         #
             reward_type = "reward_per_block"
             reward_func = reward_func_list
-            rtg_value = [[float(r)] for r in args.rtg.values()]
+            rtg_value = _resolve_rtg_streams(args.rtg, config["reward"], rtg_scale_mode=args.rtg_scale_mode)
             goal_idx = [[i] for i in range(len(reward_func))]   # [[0], [1]]
             if args.checkpoint:
                 # print(f"Generating molecules conditioned on {reward_type} with RTG = {rtg_value:.2f}")
                 # Generate 'k' molecules
-                molecules = generate_molecules(model, tokenizer, reward_func, args, ret=rtg_value, goal_idx=goal_idx) # None)
+                molecules = generate_molecules(
+                    model,
+                    tokenizer,
+                    reward_func,
+                    args,
+                    temperature=float(args.temperature),
+                    top_k=args.top_k,
+                    ret=rtg_value,
+                    goal_idx=goal_idx,
+                ) # None)
             elif args.smiles:
                 molecules = pd.read_csv(args.smiles, header=None).values.tolist()
                 molecules = [mol[0] if isinstance(mol, list) else mol for mol in molecules]
@@ -694,16 +830,23 @@ def main():
             ])
             if args.dataset_type == DatasetType.DT_SELFIES:
                 molecules = [sf.decoder(s) for s in tqdm(molecules, desc=f"decoding selfies")]
+            output_dir = os.path.join(args.results_path, res_folder)
             try:
                 generated_reward_values = get_stats(
                     molecules,
                     rtg_value=rtg_value[-1][0],
                     train_set=train_dataset,
-                    folder_name=os.path.join(args.results_path, res_folder),
+                    folder_name=output_dir,
                     reward_fn=reward_func[-1]
                 )
-            except:
-                continue
+            except Exception as exc:
+                print(f"[WARN] get_stats failed for {output_dir}: {exc}")
+                print(traceback.format_exc())
+                generated_reward_values = _write_fallback_eval_outputs(
+                    output_dir=output_dir,
+                    generated_smiles=molecules,
+                    error=exc,
+                )
             bin_validity = len(generated_reward_values["Smiles"]) / args.k
             # bin_success_rate = (
             #     np.sum(
